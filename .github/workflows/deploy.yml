@@ -44,4 +44,4 @@ jobs:
 
     - name: Forzar nuevo despliegue en Amazon ECS
       run: |
-        aws ecs update-service --cluster TU_CLUSTER_NAME --service TU_SERVICE_NAME --force-new-deployment
+        aws ecs update-service --cluster techstore-cluster --service techstore-service --force-new-deployment

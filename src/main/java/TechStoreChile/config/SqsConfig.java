@@ -1,4 +1,4 @@
-package TechStoreChile.techstore_api.security;
+package TechStoreChile.config;
 
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sqs.SqsClient;
