@@ -1,19 +1,47 @@
 package TechStoreChile.techstore_api.service;
 
+import java.time.Instant;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import TechStoreChile.techstore_api.dto.ProductoDTO;
 import TechStoreChile.techstore_api.model.Producto;
 import TechStoreChile.techstore_api.repository.ProductoRepository;
 
+import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
+
 @Service
 public class ProductoService {
 
     @Autowired
     private ProductoRepository productoRepository;
+
+    @Autowired
+    private SqsClient sqsClient;
+
+    private final String QUEUE_URL = "https://sqs.us-east-1.amazonaws.com/556437028339/techstore-audit-queue";
+
+    private void enviarAuditoriaSQS(String accion, Producto producto) {
+        // Obtener el correo del JWT autenticado
+        String usuario = SecurityContextHolder.getContext().getAuthentication().getName();
+        String fecha = Instant.now().toString();
+
+        // Armar el JSON exacto requerido en la evaluación
+        String jsonBody = String.format(
+            "{\"accion\": \"%s\", \"productoId\": %d, \"nombre\": \"%s\", \"usuario\": \"%s\", \"fecha\": \"%s\"}",
+            accion, producto.getId(), producto.getNombre(), usuario, fecha
+        );
+
+        SendMessageRequest sendMsgRequest = SendMessageRequest.builder()
+            .queueUrl(QUEUE_URL)
+            .messageBody(jsonBody)
+            .build();
+        sqsClient.sendMessage(sendMsgRequest);
+    }
 
     // Listar todos los productos.
     public List<Producto> listarTodos() {
@@ -34,7 +62,9 @@ public class ProductoService {
         producto.setStock(dto.getStock());
         producto.setCategoria(dto.getCategoria());
         producto.setActivo(dto.getActivo() != null ? dto.getActivo() : true);
-        return productoRepository.save(producto);
+        Producto guardado = productoRepository.save(producto);
+        enviarAuditoriaSQS("CREAR", guardado); // Disparar evento
+        return guardado;
     }
 
     // Modificar un producto existente usando el DTO
@@ -46,15 +76,18 @@ public class ProductoService {
             p.setStock(dto.getStock());
             p.setCategoria(dto.getCategoria());
             p.setActivo(dto.getActivo());
-            return productoRepository.save(p);
+            Producto modificado = productoRepository.save(p);
+            enviarAuditoriaSQS("MODIFICAR", modificado); // Disparar evento
+            return modificado;
         }).orElseThrow(() -> new RuntimeException("Producto no encontrado"));
     }
 
     // Cambiar el estado a inactivo en lugar de eliminar físicamente el producto
     public void eliminarProducto(Long id) {
         productoRepository.findById(id).ifPresent(p -> {
-        p.setActivo(false); // Cambiamos el estado a inactivo
-        productoRepository.save(p);
+            p.setActivo(false); // Cambiamos el estado a inactivo
+            Producto eliminado = productoRepository.save(p);
+            enviarAuditoriaSQS("ELIMINAR", eliminado);
         });
     }
 }
